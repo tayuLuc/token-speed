@@ -27,6 +27,22 @@ export function corsHint(url) {
   return 'The endpoint did not answer the preflight. Either it has no CORS headers for this origin, or the network blocked it.';
 }
 
+/**
+ * Mixed content is knowable before the request is sent: an https page may not
+ * fetch http. Measured on the deployed site, Chrome does not reject that fetch
+ * — it leaves it pending until the 30 s deadline, which is 30 seconds of a
+ * spinner and no information. The browser already knows the answer; so do we.
+ */
+export function mixedContentReason(pageOrigin, targetUrl) {
+  const parse = (u) => { try { return new URL(u); } catch { return null; } };
+  const page = parse(pageOrigin);
+  const target = parse(targetUrl);
+  if (!page || !target) return null;
+  if (page.protocol !== 'https:' || target.protocol !== 'http:') return null;
+  return `This page is served over HTTPS, so it cannot fetch ${target.origin} over plain HTTP — the browser blocks it.`
+    + '\n\nUse an https:// endpoint, or serve this page over http:// to test a local server.';
+}
+
 function endpoint(baseUrl, path) {
   return `${baseUrl.replace(/\/+$/, '')}${path}`;
 }
@@ -38,6 +54,12 @@ async function authHeaders(apiKey) {
 }
 
 export async function listModels({ baseUrl, apiKey, signal }) {
+  const mixed = mixedContentReason(globalThis.location?.origin || '', baseUrl);
+  if (mixed) {
+    const err = new Error(mixed);
+    err.friendly = true;
+    throw err;
+  }
   const r = await fetch(endpoint(baseUrl, '/models'), { headers: await authHeaders(apiKey), signal });
   if (!r.ok) throw new Error(`GET /models → HTTP ${r.status}`);
   const data = await r.json();
@@ -88,6 +110,14 @@ export async function runLive(opts) {
     clearTimeout(timer);
     if (signal) signal.removeEventListener('abort', onExternalAbort);
   };
+
+  const mixed = mixedContentReason(globalThis.location?.origin || '', baseUrl);
+  if (mixed) {
+    const err = new Error(mixed);
+    err.friendly = true;
+    clear();
+    throw err;
+  }
 
   const t0 = performance.now();
   let body = {
