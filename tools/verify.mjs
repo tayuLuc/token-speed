@@ -138,13 +138,30 @@ const live = await evaluate(`(async () => {
     .map(x => x.dataset.key + '=' + x.querySelector('.stat-v').textContent);
   return { cells, history: JSON.parse(localStorage.getItem('ts.history') || 'null'), err: document.querySelector('#liveError').hidden ? '' : document.querySelector('#liveError').textContent };
 })()`);
-check('live measurement reaches the stats row',
-  live.cells.every((c) => !c.endsWith('=—')), live.cells.join(' · '));
-check('live measurement stores history', !!(live.history && live.history[0]),
-  live.history && live.history[0]
-    ? `ttft=${live.history[0].ttftMs.toFixed(0)}ms tps=${live.history[0].tpsDecode}`
-    : (live.err || 'history empty'));
-check('live measurement reports no error', live.err === '', live.err.slice(0, 120));
+// An https page cannot call an http mock endpoint — the browser blocks it as
+// mixed content, which is correct. So on https the assertion is not "it
+// measured" but "it failed loudly and left no half-written state".
+const pageIsHttps = base.startsWith('https://');
+
+if (pageIsHttps) {
+  check('live tab reports the blocked request instead of hanging',
+    live.cells.length === 0 || live.cells.every((c) => !c.endsWith('=—')),
+    live.cells.length ? live.cells.join(' · ') : 'no stats written (request blocked by the browser)');
+  check('live tab surfaces an error message', live.err.length > 0, live.err.slice(0, 120) || '(no error shown)');
+  check('live tab writes nothing to history when blocked', !live.history,
+    live.history ? JSON.stringify(live.history).slice(0, 120) : 'history clean');
+} else {
+  // `every` on an empty array is true: an empty stats row used to pass this
+  // check while nothing had run at all.
+  check('live measurement fills the stats row',
+    live.cells.length === 6 && live.cells.every((c) => !c.endsWith('=—')),
+    live.cells.length ? live.cells.join(' · ') : 'stats row empty — nothing ran');
+  check('live measurement stores history', !!(live.history && live.history[0]),
+    live.history && live.history[0]
+      ? `ttft=${live.history[0].ttftMs.toFixed(0)}ms tps=${live.history[0].tpsDecode}`
+      : (live.err || 'history empty'));
+  check('live measurement reports no error', live.err === '', live.err.slice(0, 120));
+}
 
 /* 5 ── no uncaught exceptions anywhere in that run */
 check('no uncaught page exceptions', exceptions.length === 0, exceptions.slice(0, 2).join(' | '));

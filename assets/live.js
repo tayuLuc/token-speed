@@ -66,8 +66,28 @@ async function readError(r) {
 export async function runLive(opts) {
   const {
     baseUrl, apiKey, model, prompt, maxTokens, signal,
-    onDelta = () => {}, onFirst = () => {}, onReasoning = () => {},
+    timeoutMs = 30000,
+    onDelta = () => {}, onReasoning = () => {},
   } = opts;
+
+  // A browser will happily leave a fetch pending forever: mixed content, a
+  // preflight that never answers, a server that accepts the socket and then
+  // says nothing. Without this deadline the UI sits on "stop" with no message
+  // and no error, which is the worst possible state to debug from the other
+  // side of a firewall. (Measured on the live site: https page → http mock
+  // endpoint hangs indefinitely instead of rejecting.)
+  const controller = new AbortController();
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  const onExternalAbort = () => controller.abort();
+  if (signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener('abort', onExternalAbort, { once: true });
+  }
+  const clear = () => {
+    clearTimeout(timer);
+    if (signal) signal.removeEventListener('abort', onExternalAbort);
+  };
 
   const t0 = performance.now();
   let body = {
@@ -85,9 +105,15 @@ export async function runLive(opts) {
         method: 'POST',
         headers: await authHeaders(apiKey),
         body: JSON.stringify(payload),
-        signal,
+        signal: controller.signal,
       });
     } catch (e) {
+      if (timedOut) {
+        const err = new Error(
+          `No response in ${Math.round(timeoutMs / 1000)} s.\n\n${corsHint(baseUrl)}`);
+        err.friendly = true;
+        throw err;
+      }
       if (e.name === 'AbortError') throw e;
       const err = new Error(`Request failed: ${e.message}\n\n${corsHint(baseUrl)}`);
       err.friendly = true;
@@ -114,8 +140,8 @@ export async function runLive(opts) {
   const decoder = new TextDecoder();
 
   const deltas = [];        // content delta arrival times (ms)
+  let chars = 0;
   let reasoningChars = 0;
-  let firstText = '';
   let usage = null;
   let finishReason = null;
   let buffer = '';
@@ -143,23 +169,36 @@ export async function runLive(opts) {
     const content = delta.content;
     if (typeof content === 'string' && content.length > 0) {
       deltas.push(performance.now());
+      chars += content.length;
       onDelta(content, deltas.length);
     }
   };
 
-  while (true) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    let idx;
-    while ((idx = buffer.indexOf('\n\n')) !== -1) {
-      const chunk = buffer.slice(0, idx);
-      buffer = buffer.slice(idx + 2);
-      for (const line of chunk.split('\n')) handleLine(line.trim());
+  try {
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buffer.indexOf('\n\n')) !== -1) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        for (const line of chunk.split('\n')) handleLine(line.trim());
+      }
     }
+    buffer += decoder.decode();
+    for (const line of buffer.split('\n')) handleLine(line.trim());
+  } catch (e) {
+    if (timedOut) {
+      const err = new Error(
+        `Stream stalled: no data for ${Math.round(timeoutMs / 1000)} s after the response started.`);
+      err.friendly = true;
+      throw err;
+    }
+    throw e;
+  } finally {
+    clear();
   }
-  buffer += decoder.decode();
-  for (const line of buffer.split('\n')) handleLine(line.trim());
 
   const tEnd = performance.now();
   const firstDelta = deltas.length ? deltas[0] : 0;
@@ -182,7 +221,7 @@ export async function runLive(opts) {
     chunks: deltas.length,
     tokens,
     tokensExact: reported !== null,
-    chars: firstText.length,
+    chars,
     reasoningChars,
     promptTokens: usage && usage.prompt_tokens != null ? usage.prompt_tokens : null,
     ttftMs,

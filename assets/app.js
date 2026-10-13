@@ -681,6 +681,7 @@ async function runMeasurement() {
       prompt: formEl.prompt.value,
       maxTokens: Number(formEl.maxTokens.value),
       signal: abort.signal,
+      timeoutMs: 30000,
       onDelta: (piece) => {
         const now = performance.now();
         if (!firstDeltaAt) {
@@ -855,9 +856,6 @@ refreshLabels();
 renderHistory();
 drawChart();
 window.addEventListener('resize', drawChart);
-window.addEventListener('beforeunload', (e) => {
-  if (abort) { e.preventDefault(); e.returnValue = ''; }
-});
 document.addEventListener('keydown', (e) => {
   if (e.code !== 'Space' || e.target.matches('input, textarea, select, button')) return;
   e.preventDefault();
