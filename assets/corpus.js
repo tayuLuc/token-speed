@@ -8,81 +8,48 @@
  * GPT-class tokenizer emits — no clever splitting in the browser, no invented
  * numbers in the UI.
  *
- * chunkTokens() at the bottom is a different thing: it approximates BPE
- * splitting for live output from an endpoint that reports no token usage. Its
- * result is called "chunks" in the UI, never "tokens".
+ * Every sample exists in both UI languages, and each language is tokenized on
+ * its own. That is not tidiness: the Russian and English versions of the same
+ * text have very different token counts (mech is 574 tokens in Russian and 251
+ * in English), so a single number attached to a sample would be wrong in one
+ * of the two languages. The UI shows the count of the variant it is about to
+ * stream, and switching language updates it.
+ *
+ * The Live tab needs no fallback splitter: it shows the provider's own
+ * usage.completion_tokens when one is returned, and the raw delta count
+ * otherwise — labelled "chunks", because a delta is not guaranteed to be a
+ * token.
  */
 
-import { RAW, ENCODING, TOTAL_TOKENS } from './corpus-tokens.js';
+import { RAW, ENCODING, LANGS, TOTAL_TOKENS } from './corpus-tokens.js';
 
-export { ENCODING, TOTAL_TOKENS };
+export { ENCODING, LANGS, TOTAL_TOKENS };
 
-export const CORPUS = RAW.map((r) => ({
-  id: r.id,
-  lang: r.lang,
-  title: { ru: r.titleRu, en: r.titleEn },
-  tokens: r.tokens,
-  get text() {
-    return this.tokens.join('');
-  },
-  get count() {
-    return this.tokens.length;
-  },
-}));
-
-export function corpusById(id) {
-  return CORPUS.find((c) => c.id === id) || CORPUS[0];
+function buildSample(row) {
+  const variants = {};
+  for (const lang of LANGS) {
+    const v = row.variants[lang];
+    variants[lang] = {
+      title: v.title,
+      tokens: v.tokens,
+      text: v.tokens.join(''),
+      count: v.tokens.length,
+    };
+  }
+  return { id: row.id, variants };
 }
 
-/**
- * Approximate BPE chunking, for live output where the provider reports no
- * usage. Explicitly NOT a tokenizer; the UI labels its output "chunks".
- *
- * Calibration, measured against cl100k_base on this repo's own corpus
- * (see tools/build_corpus.py): words up to 8 characters stay whole, Latin stems
- * cut into 4s, Cyrillic stems into 2s. Chunk counts come out −43/−71/−71/+169
- * versus the real 368/574/352/185 tokens — roughly ±20 %, which is why the
- * number is displayed as chunks when usage is missing.
- */
-export function chunkTokens(text) {
-  const CYRILLIC = /[Ѐ-ӿ]/;
-  const KEEP = 8;
-  const LATIN = 4;
-  const CYR = 2;
-  const out = [];
-  const re = /\r\n|\n|\s+|[^\s]+/g;
-  let m;
-  while ((m = re.exec(text)) !== null) {
-    const piece = m[0];
-    if (piece.length <= KEEP) {
-      out.push(piece);
-      continue;
-    }
-    let lead = '';
-    let rest = piece;
-    if (rest[0] === ' ') {
-      lead = ' ';
-      rest = rest.slice(1);
-      if (rest.length <= KEEP - 1) {
-        out.push(lead + rest);
-        continue;
-      }
-    }
-    if (/^\d+$/.test(rest)) {
-      for (let i = 0; i < rest.length; i += 3) out.push((i ? '' : lead) + rest.slice(i, i + 3));
-      continue;
-    }
-    const m2 = /^([^\p{L}\p{N}]*)([\s\S]*?)([^\p{L}\p{N}]*)$/u.exec(rest);
-    const pre = m2 ? m2[1] : '';
-    const stem = m2 ? m2[2] : rest;
-    const post = m2 ? m2[3] : '';
-    if (pre) out.push(pre);
-    const size = CYRILLIC.test(stem) ? CYR : LATIN;
-    for (let i = 0; i < stem.length; i += size) {
-      const p = stem.slice(i, i + size);
-      out.push(i === 0 ? (pre ? p : lead + p) : p);
-    }
-    if (post) out.push(post);
-  }
-  return out;
+export const CORPUS = RAW.map(buildSample);
+
+export function corpusById(id, lang = 'ru') {
+  const sample = CORPUS.find((c) => c.id === id) || CORPUS[0];
+  return { ...sample, lang, ...sample.variants[lang] };
+}
+
+/** Every sample rendered in `lang`, for a <select>. */
+export function corpusOptions(lang = 'ru') {
+  return CORPUS.map((c) => {
+    const v = c.variants[lang];
+    return { id: c.id, title: v.title, count: v.count };
+  });
 }

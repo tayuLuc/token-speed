@@ -5,7 +5,7 @@
  * github.io URL and works, and every dependency is something that can rot.
  */
 
-import { CORPUS, corpusById, ENCODING, TOTAL_TOKENS, chunkTokens } from './corpus.js';
+import { CORPUS, corpusById, corpusOptions, ENCODING, TOTAL_TOKENS } from './corpus.js';
 import { GROUPS, PRESETS, RACE_LANES, presetById } from './presets.js';
 import { Stream, Series } from './player.js';
 import { runLive, listModels, corsHint } from './live.js';
@@ -42,7 +42,7 @@ const I18N = {
     'live.history': 'История замеров',
     'foot.note': 'Токены — настоящие, cl100k_base. Скорость в демо задаётся ползунком, а не измеряется.',
     'stat.target': 'Задано', 'stat.actual': 'Фактически', 'stat.ttft': 'До 1-го токена', 'stat.elapsed': 'Прошло',
-    'stat.tokens': 'Токенов', 'stat.eta': 'Осталось', 'stat.chunks': 'Фрагментов', 'stat.itl': 'Интервал между токенами',
+    'stat.tokens': 'Токенов', 'stat.eta': 'Осталось', 'stat.itl': 'Интервал между токенами',
     'stat.ittl': 'Медиана / p95', 'stat.decodetps': 'т/с декод', 'stat.totaltps': 'т/с всего', 'stat.waiting': 'ждём первый токен…',
     'err.abort': 'Замер остановлен.',
     'about.intro': 'Эта страница отвечает на вопрос «как быстро это будет выглядеть». Все три числа, которые её описывают, считаются по-разному, и их регулярно путают.',
@@ -53,7 +53,7 @@ const I18N = {
     'about.h2.3': 'Почему здесь нет setInterval',
     'about.p.3': 'Обычная реализация — это setInterval(1000 / tps), и она врёт. Замерено в Chromium 154 на машине, где собран этот репозиторий: интервал 5 мс (200 т/с), тело callback занимает 25 мс — выходит 40.3 токена в секунду вместо двухсот, с медианным промежутком 25 мс вместо 5. Демонстрация про скорость, которая сообщает не ту скорость, на которой работает, хуже отсутствия демонстрации.\n\nЗдесь график считается, а не планируется: каждый кадр спрашивается «сколько токенов должно быть уже выведено», и разница догоняется. Замер этой страницы: 10.03 при 10 т/с, 25.11 при 25, 151.01 при 150, 252.01 при 250.',
     'about.h2.4': 'Откуда берутся тексты',
-    'about.p.4': 'Примеры разбиты на токены настоящим токенизатором cl100k_base (tiktoken) офлайн, скриптом tools/build_corpus.py, и результат лежит в репозитории. Поэтому стрим показывает ровно то, что увидела бы GPT-класса модель, а длина каждого примера известна точно.',
+    'about.p.4': 'Примеры разбиты на токены настоящим токенизатором cl100k_base (tiktoken) офлайн, скриптом tools/build_corpus.py, и результат лежит в репозитории. Поэтому стрим показывает ровно то, что увидела бы GPT-класса модель, а длина каждого примера известна точно.\n\nУ каждого примера есть версия на русском и на английском, и токенизированы они отдельно: русский и английский тексты похожей длины дают разное число токенов — «из чего складывается генерация» это 574 токена по-русски и 251 по-английски. Поэтому счётчик в списке показывает длину того варианта, который сейчас потечёт.',
     'about.h2.5': 'Про пресеты',
     'about.p.5': 'Значения в кнопках — порядок величин для класса конфигурации, а не измерения конкретной модели. Точные цифры зависят от квантизации, длины контекста, батчера и нагрузки на сервер. Если нужна правда — измеряйте во вкладке «Живой замер» или на своём локальном эндпоинте.',
   },
@@ -72,7 +72,7 @@ const I18N = {
     'live.history': 'Measurement history',
     'foot.note': 'Tokens are real, cl100k_base. Speed in the demo comes from the slider, not from a measurement.',
     'stat.target': 'Target', 'stat.actual': 'Achieved', 'stat.ttft': 'First token', 'stat.elapsed': 'Elapsed',
-    'stat.tokens': 'Tokens', 'stat.eta': 'Left', 'stat.chunks': 'Chunks', 'stat.itl': 'Inter-token gap',
+    'stat.tokens': 'Tokens', 'stat.eta': 'Left', 'stat.itl': 'Inter-token gap',
     'stat.ittl': 'Median / p95', 'stat.decodetps': 'tok/s decode', 'stat.totaltps': 'tok/s overall', 'stat.waiting': 'waiting for first token…',
     'err.abort': 'Measurement stopped.',
     'about.intro': 'This page answers one question: how fast will it look. The three numbers that describe it are computed differently, and they are constantly confused with each other.',
@@ -83,7 +83,7 @@ const I18N = {
     'about.h2.3': 'Why there is no setInterval here',
     'about.p.3': 'The obvious implementation is setInterval(1000 / tps), and it lies. Measured in Chromium 154 on the machine this repo was built on: a 5 ms interval (200 tok/s) whose callback costs 25 ms delivers 40.3 tokens/s — five times slower than the number it was asked for, with a median gap of 25 ms instead of 5 ms. A demo about speed that reports a speed it does not run at is worse than no demo.\n\nHere the schedule is computed rather than timed: every frame asks how many tokens should already have been emitted, and the difference is caught up. This page measures 10.03 at 10 tok/s, 25.11 at 25, 151.01 at 150, 252.01 at 250.',
     'about.h2.4': 'Where the texts come from',
-    'about.p.4': 'The samples are split into tokens by the real cl100k_base tokenizer (tiktoken) offline, by tools/build_corpus.py, and the result is committed. So the stream shows exactly what a GPT-class tokenizer would emit, and the length of every sample is known exactly.',
+    'about.p.4': 'The samples are split into tokens by the real cl100k_base tokenizer (tiktoken) offline, by tools/build_corpus.py, and the result is committed. So the stream shows exactly what a GPT-class tokenizer would emit, and the length of every sample is known exactly.\n\nEvery sample exists in Russian and in English, and the two are tokenized separately: Russian and English texts of similar length do not produce similar token counts — the anatomy sample is 574 tokens in Russian and 251 in English. That is why the counter in the list shows the length of the variant that is about to stream.',
     'about.h2.5': 'About the presets',
     'about.p.5': 'The preset buttons are order-of-magnitude values for a class of setup, not measurements of any particular model. Real numbers depend on quantization, context length, the batching server and current load. If you need the truth, measure it in the Live tab or against your local endpoint.',
   },
@@ -168,8 +168,8 @@ function renderAbout() {
   }
   const foot = document.createElement('p');
   foot.textContent = lang === 'ru'
-    ? `${ENCODING} · ${TOTAL_TOKENS} токенов в примерах`
-    : `${ENCODING} · ${TOTAL_TOKENS} tokens across the samples`;
+    ? `${ENCODING} · ${TOTAL_TOKENS} токенов в примерах, каждый пример на двух языках`
+    : `${ENCODING} · ${TOTAL_TOKENS} tokens across the samples, each one in both languages`;
   body.appendChild(foot);
 }
 
@@ -232,16 +232,22 @@ function applyPreset(id, autoplay) {
 }
 
 function renderSampleSelects() {
+  // The token count belongs to the variant that is about to be streamed, and
+  // the two languages have different ones — so the list is rebuilt on switch.
+  const options = corpusOptions(lang);
   for (const id of ['#sample', '#raceSample']) {
     const sel = $(id);
     if (!sel) continue;
     const prev = sel.value;
     sel.textContent = '';
-    for (const c of CORPUS) {
-      const o = document.createElement('option');
-      o.value = c.id;
-      o.textContent = c.title[lang] + ` · ${c.count}`;
-      sel.appendChild(o);
+    // Short unit on purpose: Russian plural would need three forms
+    // (368 токенов / 574 токена / 352 токена) for no extra meaning.
+    const unit = lang === 'ru' ? 'ток.' : 'tokens';
+    for (const o of options) {
+      const opt = document.createElement('option');
+      opt.value = o.id;
+      opt.textContent = `${o.title} · ${o.count} ${unit}`;
+      sel.appendChild(opt);
     }
     if ([...sel.options].some((o) => o.value === prev)) sel.value = prev;
   }
@@ -275,7 +281,7 @@ function makeCursor() {
 
 function streamOptions() {
   return {
-    chunks: corpusById($('#sample').value).tokens,
+    chunks: corpusById($('#sample').value, lang).tokens,
     tps: currentSpeed(),
     ttftMs: currentTtft(),
     jitter: currentJitter(),
@@ -419,13 +425,13 @@ function renderRaceIdle() {
   for (const v of laneViews.values()) {
     v.fill.style.width = '0%';
     v.text.textContent = '';
-    v.meta.textContent = `0 / ${corpusById($('#raceSample').value).tokens.length}`;
+    v.meta.textContent = `0 / ${corpusById($('#raceSample').value, lang).tokens.length}`;
   }
 }
 
 function startRace() {
   stopRace();
-  const chunks = corpusById($('#raceSample').value).tokens;
+  const chunks = corpusById($('#raceSample').value, lang).tokens;
   const t0 = performance.now();
   for (const [id, v] of laneViews) {
     v.text.textContent = '';

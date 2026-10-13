@@ -7,10 +7,16 @@ speed should emit REAL tokens. cl100k_base (the GPT-4 / o-series reference
 tokenizer) is the closest widely-available reference, so the streams below are
 exactly what a GPT-class tokenizer hands to the model, byte for byte.
 
+Every sample exists in both UI languages, and each language is tokenized
+separately — Russian and English texts of similar length do NOT have similar
+token counts, so one array per language is the only honest option. A single
+"tokens: N" would be a lie in whichever language it did not belong to.
+
 One token is not always a valid standalone string: cl100k_base is byte-level
-BPE, so a multi-byte Cyrillic character can straddle two tokens. Decoding tokens
-one by one would corrupt the text, so each token is sliced out of the decoded
-full string by character offset. The result is asserted to rejoin the source.
+BPE, so a multi-byte Cyrillic character can straddle two tokens. Decoding
+tokens one by one would corrupt the text, so each token is sliced out of the
+decoded full string by character offset. The result is asserted to rejoin the
+source.
 
 Run:
     uv run --with tiktoken python3 tools/build_corpus.py
@@ -24,6 +30,8 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 SRC = ROOT / "tools" / "texts.json"
 OUT = ROOT / "assets" / "corpus-tokens.js"
+
+LANGS = ("ru", "en")
 
 
 def split_into_token_strings(enc, tokens):
@@ -58,21 +66,19 @@ def main() -> int:
 
     rows = []
     for t in src["texts"]:
-        ids = enc.encode(t["text"])
-        assert enc.decode(ids) == t["text"], f"round-trip failed for {t['id']}"
-        parts = split_into_token_strings(enc, ids)
-        rows.append(
-            {
-                "id": t["id"],
-                "lang": t["lang"],
-                "titleRu": t["title_ru"],
-                "titleEn": t["title_en"],
-                "tokens": parts,
+        variants = {}
+        for lang in LANGS:
+            text = t[f"text_{lang}"]
+            ids = enc.encode(text)
+            assert enc.decode(ids) == text, f"round-trip failed for {t['id']}/{lang}"
+            variants[lang] = {
+                "title": t[f"title_{lang}"],
+                "tokens": split_into_token_strings(enc, ids),
             }
-        )
-        print(f"{t['id']:10} {t['lang']:3} {len(ids):5} tokens")
+            print(f"{t['id']:10} {lang:3} {len(ids):5} tokens")
+        rows.append({"id": t["id"], "variants": variants})
 
-    total = sum(len(r["tokens"]) for r in rows)
+    total = sum(len(v["tokens"]) for r in rows for v in r["variants"].values())
     body = json.dumps(rows, ensure_ascii=False, separators=(",", ":"))
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
@@ -80,8 +86,9 @@ def main() -> int:
         "// GENERATED FILE — do not edit by hand.\n"
         "// Source: tools/texts.json · Tokenizer: tiktoken cl100k_base · Regenerate:\n"
         "//   uv run --with tiktoken python3 tools/build_corpus.py\n"
-        f"// Tokens across all samples: {total}\n\n"
+        f"// Token arrays: {len(rows)} samples × {len(LANGS)} languages, {total} tokens in total\n\n"
         f"export const ENCODING = {json.dumps(enc_name)};\n"
+        f"export const LANGS = {json.dumps(list(LANGS))};\n"
         f"export const TOTAL_TOKENS = {total};\n"
         f"export const RAW = {body};\n",
         encoding="utf-8",

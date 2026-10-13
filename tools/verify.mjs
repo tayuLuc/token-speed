@@ -88,6 +88,27 @@ for (const lang of ['ru', 'en']) {
   }
 }
 
+/* 1a ── the sample text follows the UI language, in both title and body */
+for (const lang of ['ru', 'en']) {
+  await goto(`?v=${Date.now()}`);
+  await evaluate(`localStorage.setItem('ts.lang', ${JSON.stringify(lang)})`);
+  await goto(`?v=${Date.now()}#tab=single`);
+  const probe = await evaluate(`(async () => {
+    const opts = [...document.querySelectorAll('#sample option')].map(o => o.textContent);
+    window.__ts.resetSingle();
+    document.querySelector('#playBtn').click();
+    await new Promise(r => setTimeout(r, 2500));
+    const body = document.querySelector('#singleStream').textContent;
+    window.__ts.stopSingle();
+    return JSON.stringify({ opts, body: body.slice(0, 120) });
+  })()`);
+  const g = JSON.parse(probe);
+  // Cyrillic in an English UI (or the reverse) is the defect this guards.
+  const cyrillic = /[\u0400-\u04FF]/.test(g.body);
+  check(`sample body is ${lang} when the UI is ${lang}`, cyrillic === (lang === 'ru'), g.body.slice(0, 60));
+  check(`sample list is in ${lang}`, g.opts.every((o) => (lang === 'ru') === /[\u0400-\u04FF]/.test(o)), g.opts.join(' | '));
+}
+
 /* 1b ── shared-state deep links open the right tab with the right settings */
 for (const [tab, tps] of [['race', null], ['live', null], ['about', null], ['single', 40]]) {
   await goto(`?v=${Date.now()}#tab=${tab}${tps ? `&tps=${tps}` : ''}`);
@@ -136,7 +157,13 @@ const race = await evaluate(`(async () => {
   return { metas, finished: done.length, ranked };
 })()`);
 check('race ranks every lane live', race.ranked, race.metas.join(' | '));
-check('race keeps running after the first finisher', race.finished === 1, `${race.finished} lane(s) finished at 6 s`);
+// The property is "does not stop at the first finisher", not "exactly one
+// finisher" — the count depends on how long the sample is, and asserting 1
+// broke the moment the corpus changed length.
+const total = race.metas.length;
+check('race keeps running after the first finisher',
+  race.finished >= 1 && race.finished < total,
+  `${race.finished} of ${total} lanes finished at 6 s`);
 
 /* 4 ── live measurement end to end against the mock endpoint */
 await goto(`?v=${Date.now()}#tab=live`);
