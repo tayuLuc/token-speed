@@ -26,6 +26,14 @@ is a good thing to be able to do. Three things are missing from it:
 3. **Comparison.** One stream at a time hides the only interesting question:
    which part of the delay is decode and which part is waiting.
 
+## Why this was built instead of forked
+
+Searched GitHub before writing any of it: five projects come close, all
+simulators without a measurement, four of them at zero stars. The check, the
+queries and the reasons are in [`docs/alternatives.md`](docs/alternatives.md) —
+including why the closest build (1 star, Vite + TypeScript, seeded from an
+Artificial Analysis snapshot) did not displace a from-scratch one.
+
 ## What was measured, not asserted
 
 Everything the page claims about itself is reproduced in
