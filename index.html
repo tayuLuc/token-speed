@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="ru" data-lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Token Speed — сколько токенов в секунду значит на самом деле</title>
+<meta name="description" content="Интерактивный стриминг LLM на заданной скорости: слайдер токенов в секунду, задержка до первого токена, гонка четырёх скоростей и живой замер любого OpenAI-совместимого эндпоинта прямо из браузера.">
+<meta property="og:title" content="Token Speed — сколько токенов в секунду значит на самом деле">
+<meta property="og:description" content="Симулятор скорости генерации LLM и живой замер TTFT / tokens per second / ITL для любого OpenAI-совместимого эндпоинта.">
+<meta property="og:type" content="website">
+<link rel="stylesheet" href="assets/styles.css">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⏱</text></svg>">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="wrap topbar-inner">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">⏱</span>
+      <div>
+        <h1>Token&nbsp;Speed</h1>
+        <p class="tagline" data-i18n="tagline"></p>
+      </div>
+    </div>
+    <div class="topbar-actions">
+      <button id="langToggle" class="ghost" type="button" aria-label="Switch language">EN</button>
+      <a class="ghost" href="https://github.com/tayuLuc/token-speed" target="_blank" rel="noopener">GitHub</a>
+    </div>
+  </div>
+</header>
+
+<nav class="tabs wrap" role="tablist">
+  <button class="tab is-active" role="tab" data-tab="single" aria-selected="true" data-i18n="tab.single"></button>
+  <button class="tab" role="tab" data-tab="race" aria-selected="false" data-i18n="tab.race"></button>
+  <button class="tab" role="tab" data-tab="live" aria-selected="false" data-i18n="tab.live"></button>
+  <button class="tab" role="tab" data-tab="about" aria-selected="false" data-i18n="tab.about"></button>
+</nav>
+
+<main class="wrap">
+
+<!-- ─────────────────────────────  SINGLE  ───────────────────────────── -->
+<section class="panel is-active" id="panel-single" role="tabpanel">
+  <p class="lede" data-i18n="single.lede"></p>
+
+  <div class="split">
+    <aside class="split-side">
+      <div class="presets" id="presetGroups"></div>
+    </aside>
+
+    <div class="split-main">
+      <div class="controls card">
+        <div class="control-row">
+          <label class="ctl ctl--grow">
+            <span class="ctl-label">
+              <span data-i18n="ctl.speed"></span>
+              <output id="speedOut" class="ctl-value">10.0</output>
+              <span class="unit" data-i18n="unit.tps"></span>
+            </span>
+            <input type="range" id="speed" min="0" max="1000" step="1" value="500">
+          </label>
+
+          <label class="ctl">
+            <span class="ctl-label">
+              <span data-i18n="ctl.ttft"></span>
+              <output id="ttftOut" class="ctl-value">200</output>
+              <span class="unit">ms</span>
+            </span>
+            <input type="range" id="ttft" min="0" max="12000" step="50" value="200">
+          </label>
+        </div>
+
+        <div class="control-row">
+          <label class="ctl">
+            <span class="ctl-label">
+              <span data-i18n="ctl.jitter"></span>
+              <output id="jitterOut" class="ctl-value">30</output>
+              <span class="unit">%</span>
+            </span>
+            <input type="range" id="jitter" min="0" max="100" step="5" value="30">
+          </label>
+
+          <label class="ctl">
+            <span class="ctl-label"><span data-i18n="ctl.sample"></span></span>
+            <select id="sample"></select>
+          </label>
+
+          <div class="ctl ctl--actions">
+            <button id="playBtn" class="primary" type="button" data-i18n="btn.play"></button>
+            <button id="resetBtn" class="ghost" type="button" data-i18n="btn.reset"></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="stats" id="singleStats"></div>
+
+      <div class="stream" id="singleStream" aria-live="off"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  RACE  ───────────────────────────── -->
+<section class="panel" id="panel-race" role="tabpanel" hidden>
+  <p class="lede" data-i18n="race.lede"></p>
+
+  <div class="controls card">
+    <div class="control-row">
+      <label class="ctl">
+        <span class="ctl-label"><span data-i18n="ctl.sample"></span></span>
+        <select id="raceSample"></select>
+      </label>
+      <div class="ctl ctl--actions">
+        <button id="raceBtn" class="primary" type="button" data-i18n="btn.race"></button>
+        <button id="raceResetBtn" class="ghost" type="button" data-i18n="btn.reset"></button>
+      </div>
+    </div>
+  </div>
+
+  <div id="raceLanes" class="lanes"></div>
+</section>
+
+<!-- ─────────────────────────────  LIVE  ───────────────────────────── -->
+<section class="panel" id="panel-live" role="tabpanel" hidden>
+  <p class="lede" data-i18n="live.lede"></p>
+
+  <div class="callout callout--warn" id="liveSecurity">
+    <span data-i18n="live.security"></span>
+  </div>
+
+  <form class="card live-form" id="liveForm" autocomplete="off">
+    <div class="control-row">
+      <label class="ctl ctl--grow">
+        <span class="ctl-label"><span data-i18n="live.base"></span></span>
+        <input type="url" id="baseUrl" placeholder="https://api.openai.com/v1" spellcheck="false">
+      </label>
+      <label class="ctl ctl--grow">
+        <span class="ctl-label"><span data-i18n="live.key"></span></span>
+        <input type="password" id="apiKey" placeholder="sk-…" spellcheck="false">
+      </label>
+    </div>
+
+    <div class="control-row">
+      <label class="ctl ctl--grow">
+        <span class="ctl-label"><span data-i18n="live.model"></span></span>
+        <input type="text" id="model" list="modelList" placeholder="gpt-4o-mini" spellcheck="false">
+        <datalist id="modelList"></datalist>
+      </label>
+      <label class="ctl">
+        <span class="ctl-label"><span data-i18n="live.max"></span></span>
+        <input type="number" id="maxTokens" min="16" max="8192" step="16" value="256">
+      </label>
+      <label class="ctl ctl--check">
+        <input type="checkbox" id="rememberKey">
+        <span data-i18n="live.remember"></span>
+      </label>
+      <div class="ctl ctl--actions">
+        <button id="modelsBtn" class="ghost" type="button" data-i18n="live.models"></button>
+        <button id="liveBtn" class="primary" type="button" data-i18n="btn.measure"></button>
+      </div>
+    </div>
+
+    <label class="ctl ctl--block">
+      <span class="ctl-label"><span data-i18n="live.prompt"></span></span>
+      <textarea id="prompt" rows="2"></textarea>
+    </label>
+  </form>
+
+  <div class="stats" id="liveStats"></div>
+
+  <div class="live-graph">
+    <canvas id="tpsChart" width="800" height="140" aria-label="Tokens per second over time"></canvas>
+  </div>
+
+  <div class="stream" id="liveStream"></div>
+
+  <div id="liveError" class="callout callout--error" hidden></div>
+
+  <div class="history card" id="historyCard" hidden>
+    <div class="history-head">
+      <h2 data-i18n="live.history"></h2>
+      <button id="historyClear" class="ghost ghost--sm" type="button" data-i18n="btn.clear"></button>
+    </div>
+    <div class="table-wrap"><table id="historyTable"></table></div>
+  </div>
+</section>
+
+<!-- ─────────────────────────────  ABOUT  ───────────────────────────── -->
+<section class="panel" id="panel-about" role="tabpanel" hidden>
+  <div class="prose" id="aboutBody"></div>
+</section>
+
+</main>
+
+<footer class="wrap foot">
+  <p>
+    <span data-i18n="foot.note"></span>
+    <a href="https://github.com/tayuLuc/token-speed" target="_blank" rel="noopener">tayuLuc/token-speed</a>
+    · MIT
+  </p>
+</footer>
+
+<script type="module" src="assets/app.js"></script>
+</body>
+</html>

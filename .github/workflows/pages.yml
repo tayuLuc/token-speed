@@ -1,0 +1,56 @@
+name: Deploy to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The page prints token counts from the committed arrays. If someone edits
+      # tools/texts.json without regenerating them, the printed numbers become
+      # fiction — so fail the build instead of deploying it.
+      - name: Token corpus is in sync with tools/texts.json
+        run: |
+          set -euo pipefail
+          pip install --quiet tiktoken
+          cp assets/corpus-tokens.js /tmp/corpus-tokens.before.js
+          python3 tools/build_corpus.py
+          if ! diff -q /tmp/corpus-tokens.before.js assets/corpus-tokens.js >/dev/null; then
+            echo "::error::assets/corpus-tokens.js is stale — run tools/build_corpus.py and commit the result"
+            git --no-pager diff --stat -- assets/corpus-tokens.js || true
+            exit 1
+          fi
+
+      - name: Stage site files
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp index.html _site/index.html
+          cp -r assets _site/assets
+          cp LICENSE _site/LICENSE
+          touch _site/.nojekyll
+          ls -la _site
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4
