@@ -1,7 +1,5 @@
 # Token Speed
 
-**[Live: tayuluc.github.io/token-speed](https://tayuluc.github.io/token-speed/)**
-
 What LLM generation speed actually feels like — a slider for tokens per second,
 a separate control for the wait before the first token, a race between several
 speeds at once, and a real measurement tab that times any OpenAI-compatible
