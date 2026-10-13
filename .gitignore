@@ -3,3 +3,6 @@
 .chrome-profile/
 _site/
 node_modules/
+
+# staged vault notes (не коммитятся)
+vault-staging/
