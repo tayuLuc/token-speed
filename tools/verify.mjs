@@ -88,6 +88,20 @@ for (const lang of ['ru', 'en']) {
   }
 }
 
+/* 1b ── shared-state deep links open the right tab with the right settings */
+for (const [tab, tps] of [['race', null], ['live', null], ['about', null], ['single', 40]]) {
+  await goto(`?v=${Date.now()}#tab=${tab}${tps ? `&tps=${tps}` : ''}`);
+  const got = await evaluate(`JSON.stringify({
+    active: document.querySelector('.tab.is-active').dataset.tab,
+    visible: [...document.querySelectorAll('.panel')].filter(p => !p.hidden).map(p => p.id),
+    tps: document.querySelector('#speedOut').textContent,
+  })`);
+  const g = JSON.parse(got);
+  check(`deep link #tab=${tab} opens that tab`, g.active === tab && g.visible.join() === `panel-${tab}`, got);
+  if (tps) check(`deep link #tab=single&tps=${tps} restores the speed`,
+    Math.abs(parseFloat(g.tps) - tps) / tps < 0.02, `slider shows ${g.tps}`);
+}
+
 /* 2 ── the stream holds the requested rate */
 await goto(`?v=${Date.now()}#tab=single`);
 const rate = await evaluate(`(async () => {

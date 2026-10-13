@@ -832,8 +832,17 @@ function syncUrl() {
   history.replaceState(null, '', `#${p.toString()}`);
 }
 
-function loadUrl() {
-  const raw = location.hash.replace(/^#/, '');
+/**
+ * Read the shared state from the URL fragment.
+ *
+ * `raw` must be captured BEFORE applyI18n() runs: applyI18n calls refreshLabels,
+ * which calls syncUrl, which replaceStates the hash with the defaults. Reading
+ * location.hash afterwards finds our own defaults, and every deep link
+ * (#tab=live&tps=25…) silently lands on the default tab.
+ */
+function loadUrl(raw = initialHash) {
+  if (!raw) return;
+  raw = raw.replace(/^#/, '');
   if (!raw) return;
   const p = new URLSearchParams(raw);
   const tps = parseFloat(p.get('tps'));
@@ -848,10 +857,13 @@ function loadUrl() {
 
 /* ───────────────────────────── boot ───────────────────────────── */
 
+// Captured before anything is allowed to rewrite the fragment.
+const initialHash = location.hash;
+
 lang = localStorage.getItem('ts.lang') || 'ru';
 loadForm();
 applyI18n();
-loadUrl();
+loadUrl(initialHash);
 refreshLabels();
 renderHistory();
 drawChart();
