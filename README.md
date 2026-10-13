@@ -101,6 +101,19 @@ measure it — locally or in the Live tab.
 python3 -m http.server 8812        # then open http://127.0.0.1:8812/
 ```
 
+Verifying it, in a real browser with the HTTP cache disabled:
+
+```bash
+python3 tools/mock_endpoint.py --port 8899 --rate 40 --ttft 0.5 &
+# a Chromium on --remote-debugging-port=9466 anywhere on the machine
+bun tools/verify.mjs 9466 http://127.0.0.1:8812
+```
+
+The suite checks that no i18n key leaks into either language on any tab, that
+the stream advances at the requested rate, that the race keeps running after
+the first lane finishes, and that the live tab measures a mock endpoint end to
+end. Each of those checks exists because that exact thing broke at least once.
+
 ## Layout
 
 ```

@@ -89,14 +89,17 @@ const I18N = {
   },
 };
 
+// [heading, paragraph] as ready text — NOT i18n keys. A key that exists in
+// only one language dictionary silently renders as the key itself in the other,
+// which is exactly how «about.h2.6» shipped to production once.
 const ABOUT_EXTRA = {
   ru: [
-    ['about.h2.6', 'Что здесь не измеряется'],
-    ['about.p.6', 'Демо ничего не отправляет провайдеру и ничего не замеряет само. Все числа на вкладках «Один поток» и «Гонка» — результат настроек ползунков, а не скорость какой-либо модели. Единственное место, где появляются измеренные числа, — вкладка «Живой замер», и там они всегда подписаны источником.'],
+    ['Что здесь не измеряется',
+      'Демо ничего не отправляет провайдеру и ничего не замеряет само. Все числа на вкладках «Один поток» и «Гонка» — результат настроек ползунков, а не скорость какой-либо модели. Единственное место, где появляются измеренные числа, — вкладка «Живой замер», и там они всегда подписаны источником.'],
   ],
   en: [
-    ['about.h2.6', 'What is not measured here'],
-    ['about.p.6', 'The demo sends nothing to any provider and measures nothing on its own. Every number in the Single and Race tabs is the result of the sliders, not the speed of any model. The only place measured numbers appear is the Live tab, and there they are always labelled with their source.'],
+    ['What is not measured here',
+      'The demo sends nothing to any provider and measures nothing on its own. Every number in the Single and Race tabs is the result of the sliders, not the speed of any model. The only place measured numbers appear is the Live tab, and there they are always labelled with their source.'],
   ],
 };
 
@@ -141,22 +144,32 @@ $('#langToggle').addEventListener('click', () => {
 function renderAbout() {
   const body = $('#aboutBody');
   body.textContent = '';
-  const add = (tag, key) => {
-    // Entries may carry \n\n to mean a paragraph break.
-    for (const part of t(key).split('\n\n')) {
+
+  // Entries may carry \n\n to mean a paragraph break.
+  const add = (tag, text) => {
+    for (const part of String(text).split('\n\n')) {
       const el = document.createElement(tag);
       el.textContent = part;
       body.appendChild(el);
     }
   };
-  add('p', 'about.intro');
-  for (const [hk, pk] of [['about.h2.1', 'about.p.1'], ['about.h2.2', 'about.p.2'], ['about.h2.3', 'about.p.3'],
-                          ['about.h2.4', 'about.p.4'], ['about.h2.5', 'about.p.5'], ...ABOUT_EXTRA[lang]]) {
-    add('h2', hk);
-    add('p', pk);
+
+  add('p', t('about.intro'));
+  // Both halves are already-localised strings by this point.
+  const sections = [
+    ['about.h2.1', 'about.p.1'], ['about.h2.2', 'about.p.2'], ['about.h2.3', 'about.p.3'],
+    ['about.h2.4', 'about.p.4'], ['about.h2.5', 'about.p.5'],
+  ].map(([h, p]) => [t(h), t(p)]);
+  for (const [heading, text] of [...sections, ...ABOUT_EXTRA[lang]]) {
+    const h = document.createElement('h2');
+    h.textContent = heading;
+    body.appendChild(h);
+    add('p', text);
   }
   const foot = document.createElement('p');
-  foot.textContent = `${ENCODING} · ${TOTAL_TOKENS} токенов в примерах`;
+  foot.textContent = lang === 'ru'
+    ? `${ENCODING} · ${TOTAL_TOKENS} токенов в примерах`
+    : `${ENCODING} · ${TOTAL_TOKENS} tokens across the samples`;
   body.appendChild(foot);
 }
 
@@ -330,6 +343,9 @@ function ensureStatNodes(keys) {
   for (const k of keys) {
     const box = document.createElement('div');
     box.className = 'stat';
+    // data-key keeps automated checks readable regardless of the UI language —
+    // parsing the visible label makes the suite fail only in Russian or English.
+    box.dataset.key = k;
     const kk = document.createElement('div');
     kk.className = 'stat-k';
     kk.textContent = t(k);
@@ -533,6 +549,7 @@ function liveStatRow() {
   for (const k of ['stat.ttft', 'stat.decodetps', 'stat.totaltps', 'stat.itl', 'stat.ittl', 'stat.tokens']) {
     const box = document.createElement('div');
     box.className = 'stat';
+    box.dataset.key = k;
     const kk = document.createElement('div'); kk.className = 'stat-k'; kk.textContent = t(k);
     const vv = document.createElement('div'); vv.className = 'stat-v'; vv.textContent = '—';
     box.append(kk, vv);
